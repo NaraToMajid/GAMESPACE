@@ -35,6 +35,7 @@
     /* enemy */
     .enemy{position:absolute;width:120px;pointer-events:none;transform:scaleX(-1)} /* Musuh terbalik */
     .boss{position:absolute;width:300px;pointer-events:none;transform:scaleX(-1)} /* Boss lebih besar */
+    .megaboss{position:absolute;width:400px;pointer-events:none;transform:scaleX(-1)} /* Mega Boss lebih besar */
 
     /* ui/menu */
     .menu-container{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:80px;z-index:var(--ui-z)}
@@ -102,6 +103,15 @@
     .story-text{max-width:800px;text-align:center;margin:20px 0;line-height:1.6;font-size:18px}
     .story-title{font-size:42px;margin-bottom:20px;color:#2dd4ff}
 
+    /* boss hp bar */
+    #bossHPBar{position:fixed;top:120px;left:50%;transform:translateX(-50%);width:300px;height:20px;background:#333;border-radius:10px;padding:3px;z-index:100;display:none}
+    #bossHPFill{width:100%;height:100%;border-radius:8px;background:linear-gradient(90deg, #ff3333, #ff0000);transition:width 0.3s ease}
+    #bossHPText{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:bold}
+
+    /* boss warning */
+    #bossWarning{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(255,50,50,0.9);color:#fff;padding:20px 40px;border-radius:10px;font-size:32px;font-weight:700;z-index:1000;display:none;animation:pulseWarning 1s infinite}
+    @keyframes pulseWarning{0%{transform:translate(-50%,-50%) scale(1);}50%{transform:translate(-50%,-50%) scale(1.1);}100%{transform:translate(-50%,-50%) scale(1);}}
+
     /* small responsive tweak */
     @media (max-width:1200px){
         .menu-container{flex-direction:column;gap:40px}
@@ -127,6 +137,15 @@
 <div id="hpContainer"><div id="hpBar"></div></div>
 <div id="scoreBoard">SCORE: 0</div>
 <div id="highScore">HIGH SCORE: 0</div>
+
+<!-- Boss HP Bar -->
+<div id="bossHPBar">
+    <div id="bossHPFill"></div>
+    <div id="bossHPText">BOSS HP: 0/0</div>
+</div>
+
+<!-- Boss Warning -->
+<div id="bossWarning">BOSS INCOMING!</div>
 
 <div class="menu-container" id="menuContainer">
     <!-- Game Title -->
@@ -166,11 +185,11 @@
     </div>
     <div class="character-selection">
         <div class="character-option" onclick="selectCharacter('male')">
-            <img class="character-img" src="character_male.png" alt="Karakter Pria">
+            <div style="width:180px;height:180px;border-radius:10px;border:3px solid #2dd4ff;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg, #1e3c72, #2a5298);font-size:80px;">🚀</div>
             <div class="character-name">Kapten Alex</div>
         </div>
         <div class="character-option" onclick="selectCharacter('female')">
-            <img class="character-img" src="character_female.png" alt="Karakter Wanita">
+            <div style="width:180px;height:180px;border-radius:10px;border:3px solid #2dd4ff;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg, #c33764, #e9396d);font-size:80px;">👩‍🚀</div>
             <div class="character-name">Letnan Sarah</div>
         </div>
     </div>
@@ -471,6 +490,9 @@
 <audio id="bossMusic" loop>
     <source src="boss.mp3" type="audio/mpeg">
 </audio>
+<audio id="bossWarningSound">
+    <source src="warning.mp3" type="audio/mpeg">
+</audio>
 
 <script>
 /* ================= BASE SETUP ================= */
@@ -490,6 +512,10 @@ const finalScoreText = document.getElementById('finalScore');
 const toast = document.getElementById('toast');
 const storyModeSelection = document.getElementById('storyModeSelection');
 const characterSelection = document.getElementById('characterSelection');
+const bossHPBar = document.getElementById('bossHPBar');
+const bossHPFill = document.getElementById('bossHPFill');
+const bossHPText = document.getElementById('bossHPText');
+const bossWarning = document.getElementById('bossWarning');
 
 // Audio elements
 const bgMusic = document.getElementById('bgMusic');
@@ -500,6 +526,7 @@ const clickSound = document.getElementById('clickSound');
 const gameoverSound = document.getElementById('gameoverSound');
 const launchSound = document.getElementById('launchSound');
 const bossMusic = document.getElementById('bossMusic');
+const bossWarningSound = document.getElementById('bossWarningSound');
 
 let gameMeteors = [];
 let gameEnemies = [];
@@ -520,6 +547,9 @@ let currentStoryStage = 0;
 let bossActive = false;
 let bossHP = 1000;
 let maxBossHP = 1000;
+let bossType = ''; // 'boss' or 'megaboss'
+let nextBossScore = 1500; // Skor pertama boss muncul
+let bossDefeatedCount = 0; // Jumlah boss yang sudah dikalahkan
 
 // Upgrade system - BISA BERKALI-KALI
 let upgrades = {
@@ -655,97 +685,135 @@ function createEnemy(){
 }
 
 /* =================== BOSS CREATION =================== */
-function createBoss(){
+function createBoss(type = 'boss'){
     if (bossActive) return;
     
     bossActive = true;
-    bossHP = maxBossHP;
+    bossType = type;
     
-    // Switch to boss music
-    gameplayMusic.pause();
-    bossMusic.currentTime = 0;
-    bossMusic.play();
+    if (type === 'boss') {
+        bossHP = 1000 + (bossDefeatedCount * 200); // HP meningkat setiap boss dikalahkan
+        maxBossHP = bossHP;
+    } else {
+        bossHP = 2000 + (bossDefeatedCount * 300); // HP meningkat setiap boss dikalahkan
+        maxBossHP = bossHP;
+    }
     
-    const boss = document.createElement('img');
-    boss.className='boss';
-    boss.src = 'megabos.png';
-    boss.style.top = '50%';
-    boss.style.left = (window.innerWidth + 80) + 'px';
-    boss.style.transform = 'translateY(-50%) scaleX(-1)';
-    document.body.appendChild(boss);
-    gameEnemies.push(boss);
-
-    // Move boss to center-right
-    const duration = 5000;
-    boss.style.transition = `left ${duration}ms ease-out`;
+    // Show boss warning
+    showBossWarning(type);
     
-    requestAnimationFrame(()=> {
-        boss.style.left = (window.innerWidth - 400) + 'px';
-    });
-
-    // Boss shooting interval - more frequent and powerful
-    const shootInterval = setInterval(() => {
-        if (!document.body.contains(boss) || !gameRunning || !bossActive) {
-            clearInterval(shootInterval);
-            return;
-        }
-        bossShoot(boss);
-    }, 800);
-
-    // Boss movement pattern
-    let movingDown = true;
-    const moveInterval = setInterval(() => {
-        if (!document.body.contains(boss) || !gameRunning || !bossActive) {
-            clearInterval(moveInterval);
-            return;
-        }
+    // Set timeout untuk spawn boss setelah warning
+    setTimeout(() => {
+        if (!gameRunning) return;
         
-        const currentTop = parseInt(boss.style.top);
-        if (movingDown) {
-            boss.style.top = (currentTop + 2) + 'px';
-            if (currentTop > window.innerHeight - 300) movingDown = false;
-        } else {
-            boss.style.top = (currentTop - 2) + 'px';
-            if (currentTop < 100) movingDown = true;
-        }
-    }, 50);
+        // Show boss HP bar
+        bossHPBar.style.display = 'block';
+        updateBossHPBar();
+        
+        // Switch to boss music
+        gameplayMusic.pause();
+        bossMusic.currentTime = 0;
+        bossMusic.play();
+        
+        const boss = document.createElement('img');
+        boss.className = type === 'boss' ? 'boss' : 'megaboss';
+        boss.src = type === 'boss' ? 'bos.png' : 'megabos.png';
+        boss.style.top = '50%';
+        boss.style.left = (window.innerWidth + 80) + 'px';
+        boss.style.transform = 'translateY(-50%) scaleX(-1)';
+        document.body.appendChild(boss);
+        gameEnemies.push(boss);
 
-    // Auto-remove if boss leaves screen
-    setTimeout(()=> {
-        if (document.body.contains(boss)) {
-            boss.remove();
-            gameEnemies = gameEnemies.filter(e => e !== boss);
-            bossActive = false;
-            // Switch back to normal music
-            bossMusic.pause();
-            gameplayMusic.currentTime = 0;
-            gameplayMusic.play();
-        }
-        clearInterval(shootInterval);
-        clearInterval(moveInterval);
-    }, 60000); // Boss stays for 60 seconds max
+        // Move boss to center-right
+        const duration = 5000;
+        boss.style.transition = `left ${duration}ms ease-out`;
+        
+        requestAnimationFrame(()=> {
+            boss.style.left = (window.innerWidth - (type === 'boss' ? 400 : 500)) + 'px';
+        });
+
+        // Boss shooting interval - more frequent and powerful
+        const shootInterval = setInterval(() => {
+            if (!document.body.contains(boss) || !gameRunning || !bossActive) {
+                clearInterval(shootInterval);
+                return;
+            }
+            bossShoot(boss);
+        }, type === 'boss' ? 800 : 600);
+
+        // Boss movement pattern
+        let movingDown = true;
+        const moveInterval = setInterval(() => {
+            if (!document.body.contains(boss) || !gameRunning || !bossActive) {
+                clearInterval(moveInterval);
+                return;
+            }
+            
+            const currentTop = parseInt(boss.style.top);
+            if (movingDown) {
+                boss.style.top = (currentTop + 2) + 'px';
+                if (currentTop > window.innerHeight - (type === 'boss' ? 300 : 400)) movingDown = false;
+            } else {
+                boss.style.top = (currentTop - 2) + 'px';
+                if (currentTop < 100) movingDown = true;
+            }
+        }, 50);
+
+        // Auto-remove if boss leaves screen
+        setTimeout(()=> {
+            if (document.body.contains(boss)) {
+                boss.remove();
+                gameEnemies = gameEnemies.filter(e => e !== boss);
+                bossActive = false;
+                bossHPBar.style.display = 'none';
+                // Switch back to normal music
+                bossMusic.pause();
+                gameplayMusic.currentTime = 0;
+                gameplayMusic.play();
+            }
+            clearInterval(shootInterval);
+            clearInterval(moveInterval);
+        }, 60000); // Boss stays for 60 seconds max
+    }, 3000); // Delay 3 detik setelah warning
+}
+
+function showBossWarning(type) {
+    bossWarning.textContent = type === 'boss' ? "BOSS INCOMING!" : "MEGA BOSS INCOMING!";
+    bossWarning.style.display = 'block';
+    
+    // Play warning sound
+    if (bossWarningSound) {
+        bossWarningSound.currentTime = 0;
+        bossWarningSound.play();
+    }
+    
+    // Hide warning after 3 seconds
+    setTimeout(() => {
+        bossWarning.style.display = 'none';
+    }, 3000);
 }
 
 function bossShoot(boss){
     if (!gameRunning) return;
     
     // Boss shoots multiple bullets
-    for (let i = 0; i < 3; i++) {
+    const bulletCount = bossType === 'boss' ? 3 : 5;
+    for (let i = 0; i < bulletCount; i++) {
         const p = document.createElement('div');
         p.className = 'enemy-bullet';
-        p.style.width = '20px';
-        p.style.height = '6px';
+        p.style.width = bossType === 'boss' ? '20px' : '25px';
+        p.style.height = bossType === 'boss' ? '6px' : '8px';
         
         // Compute boss's position
         const er = boss.getBoundingClientRect();
         const startLeft = er.left + 8;
-        const startTop = er.top + er.height/2 - 3 + (i-1)*30;
+        const startTop = er.top + er.height/2 - 3 + (i-Math.floor(bulletCount/2))*30;
         p.style.left = startLeft + 'px';
         p.style.top = startTop + 'px';
         document.body.appendChild(p);
         enemyBullets.push(p);
 
-        const speedBul = 10;
+        const speedBul = bossType === 'boss' ? 10 : 12;
         const it = setInterval(()=> {
             if (!document.body.contains(p)) { 
                 clearInterval(it); 
@@ -758,7 +826,7 @@ function bossShoot(boss){
             // Collision with player
             if (isCollide(p, player)){
                 // Damage player
-                const dmg = 20 + Math.floor(Math.random()*10);
+                const dmg = bossType === 'boss' ? 20 : 30;
                 reduceHP(dmg);
                 p.remove();
                 clearInterval(it);
@@ -781,18 +849,28 @@ function bossShoot(boss){
 }
 
 let enemyInterval;
-let bossInterval;
 function startEnemySpawner(){ 
     enemyInterval = setInterval(createEnemy, 3000); 
-    if (isStoryMode) {
-        // In story mode, spawn boss periodically
-        bossInterval = setInterval(createBoss, 45000); // Boss every 45 seconds
-    }
 }
 function stopEnemySpawner(){ 
     clearInterval(enemyInterval); 
-    clearInterval(bossInterval);
     bossActive = false;
+    bossHPBar.style.display = 'none';
+}
+
+/* =================== BOSS SPAWN LOGIC BERDASARKAN SKOR =================== */
+function checkBossSpawn() {
+    if (!gameRunning || bossActive) return;
+    
+    // Cek jika skor mencapai threshold untuk spawn boss
+    if (score >= nextBossScore) {
+        // Tentukan jenis boss (alternate antara boss dan megaboss)
+        const bossTypeToSpawn = (bossDefeatedCount % 2 === 0) ? 'boss' : 'megaboss';
+        createBoss(bossTypeToSpawn);
+        
+        // Set next boss score (1500, 3000, 4500, 6000, dst)
+        nextBossScore += 1500;
+    }
 }
 
 /* =================== ENEMY SHOOTING =================== */
@@ -900,6 +978,11 @@ function startGame(){
     player.src = selectedSkin;
     player.style.display='block';
     
+    // Reset boss variables
+    bossActive = false;
+    nextBossScore = 1500;
+    bossDefeatedCount = 0;
+    
     // Play launch sound
     launchSound.currentTime = 0;
     launchSound.play();
@@ -956,6 +1039,7 @@ function showStoryIntro(){
             <p>Serangan asteroid raksasa dan invasi alien telah mengancam keberlangsungan hidup umat manusia.</p>
             <p>Sebagai ${selectedCharacter === 'male' ? 'Kapten Alex' : 'Letnan Sarah'}, Anda ditugaskan untuk memimpin misi penyelamatan terakhir.</p>
             <p>Hancurkan semua ancaman yang mendekati Bumi dan selamatkan peradaban manusia!</p>
+            <p><strong>PERINGATAN:</strong> Boss akan muncul pada skor 1500, 3000, 4500, dan seterusnya!</p>
         </div>
         <div class="btn" style="margin-top:30px" onclick="this.parentElement.remove()">MULAI MISI</div>
     `;
@@ -975,6 +1059,9 @@ function restartGame(){
     
     enemyBullets.forEach(b => b.remove());
     enemyBullets = [];
+    
+    // Hide boss HP bar
+    bossHPBar.style.display = 'none';
     
     startGame();
 }
@@ -1006,6 +1093,8 @@ function backToMenu(){
     exitBtn.style.display='none';
     hpContainer.style.display='none';
     player.style.display='none';
+    bossHPBar.style.display = 'none';
+    bossWarning.style.display = 'none';
     
     // Show menu
     menuContainer.style.display='flex';
@@ -1058,6 +1147,7 @@ function gameLoop(){
     if (!gameRunning) return;
     smoothMove();
     checkCollisions();
+    checkBossSpawn(); // Cek spawn boss berdasarkan skor
     requestAnimationFrame(gameLoop);
 }
 
@@ -1208,7 +1298,7 @@ function moveBullet(p, speedBul){
         gameEnemies.slice().forEach(e => {
             if (isCollide(p, e)){
                 // Check if it's a boss
-                if (e.className === 'boss') {
+                if (e.className === 'boss' || e.className === 'megaboss') {
                     bossHit(e);
                 } else {
                     // destroy regular enemy
@@ -1280,13 +1370,14 @@ function bossHit(boss){
     breakSound.currentTime = 0;
     breakSound.play();
     
-    bossHP -= 50 + (upgrades.bullet.level * 10);
+    const damage = 50 + (upgrades.bullet.level * 10);
+    bossHP -= damage;
     
     // Spawn explosion at hit location
     const br = boss.getBoundingClientRect();
     spawnExplosion(br.left + br.width/2, br.top + br.height/2, 15);
     
-    // Update boss HP bar if it exists
+    // Update boss HP bar
     updateBossHPBar();
     
     // Check if boss is defeated
@@ -1304,78 +1395,31 @@ function bossDefeated(boss){
     boss.remove();
     gameEnemies = gameEnemies.filter(e => e !== boss);
     bossActive = false;
+    bossHPBar.style.display = 'none';
     
-    // Add score
-    addScore(500 * rebirthMultiplier);
+    // Tambah jumlah boss yang dikalahkan
+    bossDefeatedCount++;
+    
+    // Add score based on boss type
+    const bonusScore = bossType === 'boss' ? 500 : 1000;
+    addScore(bonusScore * rebirthMultiplier);
     
     // Switch back to normal music
     bossMusic.pause();
     gameplayMusic.currentTime = 0;
     gameplayMusic.play();
     
-    // Show victory message in story mode
-    if (isStoryMode) {
-        showToast("BOSS DIKALAHKAN! +500 Score");
-    }
+    // Show victory message
+    showToast(`${bossType === 'boss' ? 'BOSS' : 'MEGA BOSS'} DIKALAHKAN! +${bonusScore} Score`);
+    
+    // Tampilkan info boss berikutnya
+    showToast(`Boss berikutnya pada skor ${nextBossScore}`);
 }
 
 function updateBossHPBar(){
-    // Create or update boss HP bar
-    let bossHPBar = document.getElementById('bossHPBar');
-    if (!bossHPBar) {
-        bossHPBar = document.createElement('div');
-        bossHPBar.id = 'bossHPBar';
-        bossHPBar.style.position = 'fixed';
-        bossHPBar.style.top = '120px';
-        bossHPBar.style.left = '50%';
-        bossHPBar.style.transform = 'translateX(-50%)';
-        bossHPBar.style.width = '300px';
-        bossHPBar.style.height = '20px';
-        bossHPBar.style.background = '#333';
-        bossHPBar.style.borderRadius = '10px';
-        bossHPBar.style.padding = '3px';
-        bossHPBar.style.zIndex = '100';
-        document.body.appendChild(bossHPBar);
-        
-        const bossHPFill = document.createElement('div');
-        bossHPFill.id = 'bossHPFill';
-        bossHPFill.style.width = '100%';
-        bossHPFill.style.height = '100%';
-        bossHPFill.style.borderRadius = '8px';
-        bossHPFill.style.background = 'linear-gradient(90deg, #ff3333, #ff0000)';
-        bossHPFill.style.transition = 'width 0.3s ease';
-        bossHPBar.appendChild(bossHPFill);
-        
-        const bossHPText = document.createElement('div');
-        bossHPText.id = 'bossHPText';
-        bossHPText.style.position = 'absolute';
-        bossHPText.style.top = '0';
-        bossHPText.style.left = '0';
-        bossHPText.style.width = '100%';
-        bossHPText.style.height = '100%';
-        bossHPText.style.display = 'flex';
-        bossHPText.style.alignItems = 'center';
-        bossHPText.style.justifyContent = 'center';
-        bossHPText.style.color = '#fff';
-        bossHPText.style.fontSize = '12px';
-        bossHPText.style.fontWeight = 'bold';
-        bossHPBar.appendChild(bossHPText);
-    }
-    
-    const bossHPFill = document.getElementById('bossHPFill');
-    const bossHPText = document.getElementById('bossHPText');
     const hpPercent = (bossHP / maxBossHP) * 100;
     bossHPFill.style.width = hpPercent + '%';
-    bossHPText.textContent = `BOSS HP: ${bossHP}/${maxBossHP}`;
-    
-    // Remove HP bar if boss is defeated
-    if (bossHP <= 0) {
-        setTimeout(() => {
-            if (document.body.contains(bossHPBar)) {
-                bossHPBar.remove();
-            }
-        }, 2000);
-    }
+    bossHPText.textContent = `${bossType === 'boss' ? 'BOSS' : 'MEGA BOSS'} HP: ${bossHP}/${maxBossHP}`;
 }
 
 /* explosion particles function */
@@ -1488,9 +1532,9 @@ function onPlayerDeath(){
     enemyBullets.forEach(b => b.remove());
     enemyBullets = [];
     
-    // Remove boss HP bar if exists
-    const bossHPBar = document.getElementById('bossHPBar');
-    if (bossHPBar) bossHPBar.remove();
+    // Hide boss HP bar
+    bossHPBar.style.display = 'none';
+    bossWarning.style.display = 'none';
     
     // Update high score REAL TIME - FIXED
     if (score > highScore) {
@@ -1954,6 +1998,7 @@ function setupButtonHoverEffects() {
     gameoverSound.volume = 0.7;
     launchSound.volume = 0.5;
     bossMusic.volume = 0.7;
+    if (bossWarningSound) bossWarningSound.volume = 0.8;
     
     // Langsung mainkan soundtrack menu - FIXED AUTOPLAY ISSUE
     setTimeout(() => {
